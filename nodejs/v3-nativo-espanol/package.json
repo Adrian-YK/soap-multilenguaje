@@ -1,0 +1,12 @@
+{
+  "name": "nativo-espanol-nodejs",
+  "version": "1.0.0",
+  "description": "Número a letras en español - librería nativa Node.js",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "numero-a-letras": "^1.0.5"
+  }
+}

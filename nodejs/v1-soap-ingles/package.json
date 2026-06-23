@@ -1,0 +1,12 @@
+{
+  "name": "soap-ingles-nodejs",
+  "version": "1.0.0",
+  "description": "Cliente SOAP NumberConversion - resultado en inglés",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "soap": "^1.0.0"
+  }
+}

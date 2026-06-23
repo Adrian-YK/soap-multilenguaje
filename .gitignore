@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+npm-debug.log
+
+# Ruby
+vendor/bundle/
+.bundle/
+*.gem
+
+# Java / Maven
+target/
+*.class
+*.jar
+
+# .NET
+bin/
+obj/
+*.user
+
+# Go
+*.exe
+
+# Rust
+target/
+Cargo.lock
+
+# C++
+*.o
+servidor
+servidor.exe
+
+# OS
+.DS_Store
+Thumbs.db

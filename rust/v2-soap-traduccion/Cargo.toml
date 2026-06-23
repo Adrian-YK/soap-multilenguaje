@@ -1,0 +1,11 @@
+[package]
+name = "v2-soap-traduccion"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+urlencoding = "2.1"
+serde = { version = "1", features = ["derive"] }
