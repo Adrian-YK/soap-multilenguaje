@@ -1,49 +1,42 @@
-// java/v1-soap-ingles/src/main/java/SoapInglesApplication.java
-// Ejecutar: mvn spring-boot:run
-// Acceder:  http://localhost:8080/numero?n=10
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
 
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.http.*;
-
-@SpringBootApplication
-@RestController
 public class SoapInglesApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(SoapInglesApplication.class, args);
+    static String[] unidades = {"", "one", "two", "three", "four", "five",
+        "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+        "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+        "eighteen", "nineteen"};
+    static String[] decenas = {"", "", "twenty", "thirty", "forty", "fifty",
+        "sixty", "seventy", "eighty", "ninety"};
+
+    static String numeroEnIngles(long n) {
+        if (n == 0) return "zero";
+        if (n < 20) return unidades[(int)n];
+        if (n < 100) return n % 10 == 0 ? decenas[(int)(n/10)] : decenas[(int)(n/10)] + " " + unidades[(int)(n%10)];
+        if (n < 1000) return n % 100 == 0 ? unidades[(int)(n/100)] + " hundred" : unidades[(int)(n/100)] + " hundred " + numeroEnIngles(n%100);
+        if (n < 1000000) {
+            long miles = n / 1000, resto = n % 1000;
+            return resto == 0 ? numeroEnIngles(miles) + " thousand" : numeroEnIngles(miles) + " thousand " + numeroEnIngles(resto);
+        }
+        return "very large number";
     }
 
-    @GetMapping("/numero")
-    public String numeroALetras(@RequestParam int n) throws Exception {
-        String endpoint = "https://www.dataaccess.com/webservicesserver/NumberConversion.wso";
-
-        // Construir mensaje SOAP manualmente
-        String soapBody = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-              <soap:Body>
-                <NumberToWords xmlns="http://www.dataaccess.com/webservicesserver/">
-                  <ubiNum>%d</ubiNum>
-                </NumberToWords>
-              </soap:Body>
-            </soap:Envelope>
-            """.formatted(n);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.TEXT_XML);
-        headers.set("SOAPAction", "NumberToWords");
-
-        RestTemplate restTemplate = new RestTemplate();
-        HttpEntity<String> request = new HttpEntity<>(soapBody, headers);
-        ResponseEntity<String> response = restTemplate.postForEntity(endpoint, request, String.class);
-
-        // Extraer resultado del XML de respuesta
-        String xml = response.getBody();
-        String resultado = xml.replaceAll(".*<NumberToWordsResult>(.*?)</NumberToWordsResult>.*", "$1");
-
-        return n + " => " + resultado;
+    public static void main(String[] args) throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        server.createContext("/numero", exchange -> {
+            String query = exchange.getRequestURI().getQuery();
+            int n = 0;
+            if (query != null && query.startsWith("n=")) {
+                try { n = Integer.parseInt(query.substring(2)); } catch (Exception e) {}
+            }
+            String resultado = n + " => " + numeroEnIngles(n);
+            byte[] bytes = resultado.getBytes();
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.getResponseBody().close();
+        });
+        server.start();
+        System.out.println("Servidor en http://localhost:8080/numero?n=10");
     }
 }
