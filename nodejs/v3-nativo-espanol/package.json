@@ -7,6 +7,6 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "numero-a-letras": "^1.0.5"
+    "numero-a-letras": "^1.0.6"
   }
 }
