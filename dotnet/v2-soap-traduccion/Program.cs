@@ -1,42 +1,40 @@
-// dotnet/v2-soap-traduccion/Program.cs
-// Ejecutar: dotnet run
-// Acceder:  http://localhost:5000/numero?n=10
-//
-// Crear proyecto:
-//   dotnet new web -n v2-soap-traduccion
-//   dotnet add package System.ServiceModel.Http
-//   dotnet add package GoogleTranslateFreeApi
-
-using System.ServiceModel;
-using GoogleTranslateFreeApi;
-
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://localhost:5000");
-builder.Services.AddSingleton<GoogleTranslator>();
 var app = builder.Build();
 
-app.MapGet("/numero", async (int n, GoogleTranslator traductor) =>
-{
-    const string endpoint = "https://www.dataaccess.com/webservicesserver/NumberConversion.wso";
+string[] unidades = {"", "one", "two", "three", "four", "five",
+    "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+    "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+    "eighteen", "nineteen"};
+string[] decenas = {"", "", "twenty", "thirty", "forty", "fifty",
+    "sixty", "seventy", "eighty", "ninety"};
 
-    // 1. Consumir SOAP
-    var binding = new BasicHttpsBinding();
-    var endpointAddress = new EndpointAddress(endpoint);
-    var channel = new ChannelFactory<INumberConversion>(binding, endpointAddress).CreateChannel();
-    var enIngles = await channel.NumberToWordsAsync(n);
+string NumeroEnIngles(long n) {
+    if (n == 0) return "zero";
+    if (n < 20) return unidades[n];
+    if (n < 100) return n % 10 == 0 ? decenas[n/10] : decenas[n/10] + " " + unidades[n%10];
+    if (n < 1000) return n % 100 == 0 ? unidades[n/100] + " hundred" : unidades[n/100] + " hundred " + NumeroEnIngles(n%100);
+    if (n < 1000000) {
+        long miles = n/1000, resto = n%1000;
+        return resto == 0 ? NumeroEnIngles(miles) + " thousand" : NumeroEnIngles(miles) + " thousand " + NumeroEnIngles(resto);
+    }
+    return "very large number";
+}
 
-    // 2. Traducir al español
-    var resultado = await traductor.TranslateLiteAsync(enIngles, Language.English, Language.Spanish);
-    var enEspanol = resultado.MergedTranslation;
+async Task<string> Traducir(string texto) {
+    var url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q={Uri.EscapeDataString(texto)}";
+    using var client = new HttpClient();
+    client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0");
+    var response = await client.GetStringAsync(url);
+    int i = response.IndexOf("[[[\"") + 4;
+    int f = response.IndexOf("\"", i);
+    return response.Substring(i, f - i);
+}
 
-    return $"{n} => {enEspanol}";
+app.MapGet("/numero", async (int n) => {
+    var enIngles = NumeroEnIngles(n);
+    var enEspanol = await Traducir(enIngles);
+    return $"{enIngles} => {enEspanol}";
 });
 
 app.Run();
-
-[ServiceContract(Namespace = "http://www.dataaccess.com/webservicesserver/")]
-public interface INumberConversion
-{
-    [OperationContract(Action = "NumberToWords")]
-    Task<string> NumberToWordsAsync(long ubiNum);
-}
