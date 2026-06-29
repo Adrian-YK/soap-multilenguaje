@@ -1,46 +1,32 @@
-// rust/v2-soap-traduccion/src/main.rs
-// Ejecutar: cargo run
-// Acceder:  http://localhost:8080/numero?n=10
-
 use std::collections::HashMap;
-use reqwest::Client;
 use axum::{extract::Query, routing::get, Router};
-use serde::Deserialize;
+use reqwest::Client;
 
-const SOAP_ENDPOINT: &str = "https://www.dataaccess.com/webservicesserver/NumberConversion.wso";
+fn numero_en_ingles(n: i64) -> String {
+    let unidades = ["", "one", "two", "three", "four", "five",
+                    "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+                    "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+                    "eighteen", "nineteen"];
+    let decenas = ["", "", "twenty", "thirty", "forty", "fifty",
+                   "sixty", "seventy", "eighty", "ninety"];
 
-async fn llamar_soap(n: &str) -> String {
-    let soap_body = format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <NumberToWords xmlns="http://www.dataaccess.com/webservicesserver/">
-      <ubiNum>{}</ubiNum>
-    </NumberToWords>
-  </soap:Body>
-</soap:Envelope>"#,
-        n
-    );
-
-    let client = Client::new();
-    let resp = client
-        .post(SOAP_ENDPOINT)
-        .header("Content-Type", "text/xml; charset=utf-8")
-        .header("SOAPAction", "NumberToWords")
-        .body(soap_body)
-        .send()
-        .await;
-
-    if let Ok(r) = resp {
-        let xml = r.text().await.unwrap_or_default();
-        if let Some(inicio) = xml.find("<NumberToWordsResult>") {
-            let resto = &xml[inicio + "<NumberToWordsResult>".len()..];
-            if let Some(fin) = resto.find("</NumberToWordsResult>") {
-                return resto[..fin].to_string();
-            }
-        }
+    if n == 0 { return "zero".to_string(); }
+    if n < 20 { return unidades[n as usize].to_string(); }
+    if n < 100 {
+        if n % 10 == 0 { return decenas[(n/10) as usize].to_string(); }
+        return format!("{} {}", decenas[(n/10) as usize], unidades[(n%10) as usize]);
     }
-    String::from("error")
+    if n < 1000 {
+        if n % 100 == 0 { return format!("{} hundred", unidades[(n/100) as usize]); }
+        return format!("{} hundred {}", unidades[(n/100) as usize], numero_en_ingles(n%100));
+    }
+    if n < 1_000_000 {
+        let miles = n / 1000;
+        let resto = n % 1000;
+        if resto == 0 { return format!("{} thousand", numero_en_ingles(miles)); }
+        return format!("{} thousand {}", numero_en_ingles(miles), numero_en_ingles(resto));
+    }
+    "very large number".to_string()
 }
 
 async fn traducir(texto: &str) -> String {
@@ -48,11 +34,9 @@ async fn traducir(texto: &str) -> String {
         "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q={}",
         urlencoding::encode(texto)
     );
-
     let client = Client::new();
-    if let Ok(resp) = client.get(&url).send().await {
+    if let Ok(resp) = client.get(&url).header("User-Agent", "Mozilla/5.0").send().await {
         if let Ok(body) = resp.text().await {
-            // Parsear JSON: [[["traduccion",...
             if let Some(inicio) = body.find("[[[\"") {
                 let resto = &body[inicio + 4..];
                 if let Some(fin) = resto.find('"') {
@@ -65,15 +49,10 @@ async fn traducir(texto: &str) -> String {
 }
 
 async fn numero_handler(Query(params): Query<HashMap<String, String>>) -> String {
-    let n = params.get("n").map(|s| s.as_str()).unwrap_or("0");
-
-    // 1. SOAP → inglés
-    let en_ingles = llamar_soap(n).await;
-
-    // 2. Traducir → español
+    let n: i64 = params.get("n").and_then(|s| s.parse().ok()).unwrap_or(0);
+    let en_ingles = numero_en_ingles(n);
     let en_espanol = traducir(&en_ingles).await;
-
-    format!("{} => {}", n, en_espanol)
+    format!("{} => {}", en_ingles, en_espanol)
 }
 
 #[tokio::main]
