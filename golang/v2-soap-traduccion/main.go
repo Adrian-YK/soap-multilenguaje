@@ -1,57 +1,69 @@
-// golang/v2-soap-traduccion/main.go
-// Ejecutar: go run main.go
-// Acceder:  http://localhost:8080/numero?n=10
-//
-// Instalar dependencias:
-//   go mod init soap-traduccion
-//   go get github.com/tiaguinho/gosoap
-//   go get github.com/bregydoc/gtranslate
-
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-
-	"github.com/bregydoc/gtranslate"
-	"github.com/tiaguinho/gosoap"
+	"net/url"
+	"strconv"
 )
 
-const wsdl = "https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL"
+var unidades = []string{"", "one", "two", "three", "four", "five",
+	"six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+	"thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+	"eighteen", "nineteen"}
+
+var decenas = []string{"", "", "twenty", "thirty", "forty", "fifty",
+	"sixty", "seventy", "eighty", "ninety"}
+
+func numeroEnIngles(n int64) string {
+	if n == 0 { return "zero" }
+	if n < 20 { return unidades[n] }
+	if n < 100 {
+		if n%10 == 0 { return decenas[n/10] }
+		return decenas[n/10] + " " + unidades[n%10]
+	}
+	if n < 1000 {
+		if n%100 == 0 { return unidades[n/100] + " hundred" }
+		return unidades[n/100] + " hundred " + numeroEnIngles(n%100)
+	}
+	miles := n / 1000; resto := n % 1000
+	if resto == 0 { return numeroEnIngles(miles) + " thousand" }
+	return numeroEnIngles(miles) + " thousand " + numeroEnIngles(resto)
+}
+
+func traducir(texto string) string {
+	apiURL := fmt.Sprintf("https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=%s", url.QueryEscape(texto))
+	client := &http.Client{}
+	req, _ := http.NewRequest("GET", apiURL, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	resp, err := client.Do(req)
+	if err != nil { return texto }
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var result []interface{}
+	if err := json.Unmarshal(body, &result); err != nil { return texto }
+	arr := result[0].([]interface{})
+	traduccion := ""
+	for _, item := range arr {
+		par := item.([]interface{})
+		if len(par) > 0 && par[0] != nil {
+			traduccion += par[0].(string)
+		}
+	}
+	return traduccion
+}
 
 func numeroHandler(w http.ResponseWriter, r *http.Request) {
-	numero := r.URL.Query().Get("n")
-	if numero == "" {
-		numero = "0"
-	}
-
-	// 1. Consumir SOAP
-	soap, err := gosoap.SoapClient(wsdl, nil)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error SOAP: %v", err), http.StatusInternalServerError)
-		return
-	}
-	params := gosoap.Params{"ubiNum": numero}
-	resp, err := soap.Call("NumberToWords", params)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error llamada: %v", err), http.StatusInternalServerError)
-		return
-	}
-	var enIngles string
-	resp.Unmarshal(&enIngles)
-
-	// 2. Traducir al español
-	enEspanol, err := gtranslate.TranslateWithParams(enIngles, gtranslate.TranslationParams{
-		From: "en",
-		To:   "es",
-	})
-	if err != nil {
-		enEspanol = enIngles // fallback sin traducción
-	}
-
+	nStr := r.URL.Query().Get("n")
+	n, err := strconv.ParseInt(nStr, 10, 64)
+	if err != nil { n = 0 }
+	enIngles := numeroEnIngles(n)
+	enEspanol := traducir(enIngles)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, "%s => %s", numero, enEspanol)
+	fmt.Fprintf(w, "%s => %s", enIngles, enEspanol)
 }
 
 func main() {
