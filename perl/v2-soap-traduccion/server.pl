@@ -1,27 +1,45 @@
 #!/usr/bin/perl
-# perl/v2-soap-traduccion/server.pl
-# Ejecutar: perl server.pl
-# Acceder:  http://localhost:8080/numero?n=10
-#
-# Instalar dependencias:
-#   cpan SOAP::Lite HTTP::Server::Simple::CGI LWP::UserAgent JSON URI::Escape
-
 use strict;
 use warnings;
-use SOAP::Lite;
-use HTTP::Server::Simple::CGI;
+use IO::Socket::INET;
 use LWP::UserAgent;
-use JSON;
 use URI::Escape;
+use JSON;
 
-my $wsdl = 'https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL';
+my @unidades = ('', 'one', 'two', 'three', 'four', 'five',
+    'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+    'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen',
+    'eighteen', 'nineteen');
+my @decenas = ('', '', 'twenty', 'thirty', 'forty', 'fifty',
+    'sixty', 'seventy', 'eighty', 'ninety');
 
-sub traducir_al_espanol {
+sub numero_en_ingles {
+    my ($n) = @_;
+    return 'zero' if $n == 0;
+    return $unidades[$n] if $n < 20;
+    if ($n < 100) {
+        return $decenas[int($n/10)] if $n % 10 == 0;
+        return $decenas[int($n/10)] . ' ' . $unidades[$n%10];
+    }
+    if ($n < 1000) {
+        return $unidades[int($n/100)] . ' hundred' if $n % 100 == 0;
+        return $unidades[int($n/100)] . ' hundred ' . numero_en_ingles($n%100);
+    }
+    if ($n < 1000000) {
+        my $miles = int($n/1000);
+        my $resto = $n % 1000;
+        return numero_en_ingles($miles) . ' thousand' if $resto == 0;
+        return numero_en_ingles($miles) . ' thousand ' . numero_en_ingles($resto);
+    }
+    return 'very large number';
+}
+
+sub traducir {
     my ($texto) = @_;
-    my $texto_encoded = uri_escape($texto);
-    my $url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=$texto_encoded";
-
+    my $encoded = uri_escape($texto);
+    my $url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=$encoded";
     my $ua = LWP::UserAgent->new;
+    $ua->agent('Mozilla/5.0');
     my $resp = $ua->get($url);
     if ($resp->is_success) {
         my $data = decode_json($resp->decoded_content);
@@ -30,23 +48,29 @@ sub traducir_al_espanol {
     return $texto;
 }
 
-{
-    package MiServidor;
-    use parent 'HTTP::Server::Simple::CGI';
+my $server = IO::Socket::INET->new(
+    LocalPort => 8080,
+    Type => SOCK_STREAM,
+    Reuse => 1,
+    Listen => 10
+) or die "No se pudo crear el servidor: $!";
 
-    sub handle_request {
-        my ($self, $cgi) = @_;
-        my $numero = $cgi->param('n') || 0;
+print "Servidor corriendo en http://localhost:8080/numero?n=10\n";
 
-        my $soap = SOAP::Lite->service($wsdl);
-        my $en_ingles = $soap->NumberToWords($numero);
-        my $en_espanol = main::traducir_al_espanol($en_ingles);
-
-        print "HTTP/1.0 200 OK\r\n";
-        print "Content-Type: text/plain; charset=utf-8\r\n\r\n";
-        print "$numero => $en_espanol\n";
+while (my $client = $server->accept()) {
+    my $request = '';
+    while (my $line = <$client>) {
+        $request .= $line;
+        last if $line eq "\r\n";
     }
+    my $n = 0;
+    if ($request =~ /GET \/numero\?n=(\d+)/) {
+        $n = $1;
+    }
+    my $en_ingles = numero_en_ingles($n);
+    my $en_espanol = traducir($en_ingles);
+    my $resultado = "$en_ingles => $en_espanol";
+    my $response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: " . length($resultado) . "\r\n\r\n$resultado";
+    print $client $response;
+    close $client;
 }
-
-my $servidor = MiServidor->new(8080);
-$servidor->run();

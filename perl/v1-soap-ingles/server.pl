@@ -1,34 +1,59 @@
 #!/usr/bin/perl
-# perl/v1-soap-ingles/server.pl
-# Ejecutar: perl server.pl
-# Acceder:  http://localhost:8080/numero?n=10
-#
-# Instalar dependencias:
-#   cpan SOAP::Lite HTTP::Server::Simple::CGI
-
 use strict;
 use warnings;
-use SOAP::Lite;
-use HTTP::Server::Simple::CGI;
+use IO::Socket::INET;
 
-my $wsdl = 'https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL';
+my @unidades = ('', 'one', 'two', 'three', 'four', 'five',
+    'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve',
+    'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen',
+    'eighteen', 'nineteen');
+my @decenas = ('', '', 'twenty', 'thirty', 'forty', 'fifty',
+    'sixty', 'seventy', 'eighty', 'ninety');
 
-{
-    package MiServidor;
-    use parent 'HTTP::Server::Simple::CGI';
-
-    sub handle_request {
-        my ($self, $cgi) = @_;
-        my $numero = $cgi->param('n') || 0;
-
-        my $soap = SOAP::Lite->service($wsdl);
-        my $resultado = $soap->NumberToWords($numero);
-
-        print "HTTP/1.0 200 OK\r\n";
-        print "Content-Type: text/plain; charset=utf-8\r\n\r\n";
-        print "$numero => $resultado\n";
+sub numero_en_ingles {
+    my ($n) = @_;
+    return 'zero' if $n == 0;
+    return $unidades[$n] if $n < 20;
+    if ($n < 100) {
+        return $decenas[int($n/10)] if $n % 10 == 0;
+        return $decenas[int($n/10)] . ' ' . $unidades[$n%10];
     }
+    if ($n < 1000) {
+        return $unidades[int($n/100)] . ' hundred' if $n % 100 == 0;
+        return $unidades[int($n/100)] . ' hundred ' . numero_en_ingles($n%100);
+    }
+    if ($n < 1000000) {
+        my $miles = int($n/1000);
+        my $resto = $n % 1000;
+        return numero_en_ingles($miles) . ' thousand' if $resto == 0;
+        return numero_en_ingles($miles) . ' thousand ' . numero_en_ingles($resto);
+    }
+    return 'very large number';
 }
 
-my $servidor = MiServidor->new(8080);
-$servidor->run();
+my $server = IO::Socket::INET->new(
+    LocalPort => 8080,
+    Type => SOCK_STREAM,
+    Reuse => 1,
+    Listen => 10
+) or die "No se pudo crear el servidor: $!";
+
+print "Servidor corriendo en http://localhost:8080/numero?n=10\n";
+
+while (my $client = $server->accept()) {
+    my $request = '';
+    while (my $line = <$client>) {
+        $request .= $line;
+        last if $line eq "\r\n";
+    }
+
+    my $n = 0;
+    if ($request =~ /GET \/numero\?n=(\d+)/) {
+        $n = $1;
+    }
+
+    my $resultado = "$n => " . numero_en_ingles($n);
+    my $response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: " . length($resultado) . "\r\n\r\n$resultado";
+    print $client $response;
+    close $client;
+}
